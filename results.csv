@@ -1,0 +1,10 @@
+﻿URL,Status,Patent_Numbers_Found,Patent_Examples,Virtual_Marking_Link,Pages_Visited
+patents.justia.com/assignee/siemens,Success,0,,False,1
+press.siemens.com/global/en/pressrelease/inventors-patents-and-innovative-strength-siemens-competitive-advantages,Success,0,,True,7
+siemens.com,Success,0,,False,6
+siemens.de,Success,0,,False,3
+bosch.com,Success,0,,True,5
+bosch.de,Success,0,,True,3
+basf.com,Success,0,,True,8
+basf.de,Success,0,,True,8
+https://www.epo.org/en/searching-for-patents/data/bulk-data-sets/data,Success,0,,True,367

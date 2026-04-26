@@ -1,0 +1,11 @@
+﻿url,patents,count,status
+https://patents.justia.com/assignee/siemens,,0,ok
+https://press.siemens.com/global/en/pressrelease/inventors-patents-and-innovative-strength-siemens-competitive-advantages,,0,ok
+https://siemens.com,,0,ok
+https://siemens.de,,0,ok
+https://bosch.com,,0,ok
+https://bosch.de,,0,blocked
+https://basf.com,,0,ok
+https://basf.de,,0,ok
+https://www.epo.org/en/searching-for-patents/data/bulk-data-sets/data,,0,ok
+https://patents.google.com/?q=(Siemens)&oq=Siemens,CN111665784B; CN112640226B; JP2025078769A; US10209282B2; US10748914B2; US10779887B2; US10910559B2; US12050257B2; US9660384B2,9,ok
