@@ -1,12 +1,5 @@
 url,patents,count,status
-https://patents.justia.com/assignee/siemens,,0,ok
-https://press.siemens.com/global/en/pressrelease/inventors-patents-and-innovative-strength-siemens-competitive-advantages,,0,ok
-https://siemens.com,,0,ok
-https://siemens.de,,0,ok
-https://bosch.com,,0,ok
-https://bosch.de,,0,ok
-https://basf.com,,0,ok
-https://basf.de,,0,ok
+https://patents.justia.com/assignee/siemens,,0,error
 https://www.epo.org/en/searching-for-patents/data/bulk-data-sets/data,,0,ok
-https://patents.google.com/?q=(Siemens)&oq=Siemens,US10748914; US12050257B2; US10209282; US10209282B2; US9660384B2; US09660384; US10910559B2; US10779887; US10748914B2; CN111665784B; US12050257; US9660384; US10910559; CN112640226B; JP2025078769A; US10779887B2,16,ok
+https://patents.google.com/?q=(Siemens)&oq=Siemens,CN104898620B; CN106457068B; CN108769022B; CN111665784B; CN112640226B; JP2025078769A; US07617691; US08664075; US09660384; US10209282; US10209282B2; US10624696; US10624696B2; US10748914; US10748914B2; US10777921; US10777921B2; US10779887; US10779887B2; US10910559; US10910559B2; US12015092; US12015092B2; US12050257; US12050257B2; US20200381771A1; US7617691; US7617691B2; US8664075; US8664075B2; US9660384; US9660384B2,32,ok
 https://www.novonordisk-us.com/products/product-patents.html,,0,ok
