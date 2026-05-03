@@ -240,7 +240,7 @@ async def main():
     # CONFIGURE QUERY + PAGES
     # -------------------------
     QUERY = "siemens"
-    NUM_PAGES = 10
+    NUM_PAGES = 5
 
     def generate_google_patent_pages(query, pages):
         base = "https://patents.google.com/"
@@ -270,6 +270,7 @@ async def main():
         all_patents = set().union(*scrape_results)
 
         print(f"\n🧾 Unique patents found: {len(all_patents)}\n")
+        print(all_patents)
 
         # -------------------------
         # STEP 2: ENRICH PATENTS
