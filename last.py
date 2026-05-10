@@ -10,7 +10,7 @@ from playwright.async_api import async_playwright
 # =========================
 # CONFIG
 # =========================
-OUTPUT_FILE = "courtlistener_enriched_2.csv"
+OUTPUT_FILE = "courtlistener_enriched_3.csv"
 
 # Concurrency settings
 MAX_CONCURRENT_SCRAPES = 3
@@ -29,55 +29,125 @@ NUM_PAGES = 11
 
 def analyze_legal_content(text: str):
     """
-    Analyzes the legal text to determine outcome and payments.
-    Returns a dict with 'outcome' (0/1), 'payment_found' (0/1), and 'payment_amount'.
+    Improved legal outcome + damages extraction.
+    Focuses on tail sections where judgments/orders usually appear.
     """
+
+    # -----------------------------------
+    # FOCUS ON END OF DOCUMENT
+    # -----------------------------------
+    # Most legal outcomes are near the end
+    text = text[-20000:]
+
     text_lower = text.lower()
-    
+
     result = {
-        "outcome": None, 
+        "outcome": "unknown",
         "payment_found": 0,
         "payment_amount": None
     }
 
-    # -----------------------------
-    # 1. DETERMINE OUTCOME
-    # -----------------------------
-    win_signals = [
-        "judgment for plaintiff", "plaintiff prevailed", "plaintiff wins", 
-        "granted in part", "judgment is entered in favor of plaintiff", "defendant is liable"
+    # -----------------------------------
+    # OUTCOME DETECTION
+    # -----------------------------------
+
+    plaintiff_signals = [
+        "judgment for plaintiff",
+        "plaintiff prevailed",
+        "plaintiff wins",
+        "defendant is liable",
+        "in favor of plaintiff",
+        "motion granted for plaintiff",
+        "permanent injunction granted"
     ]
-    loss_signals = [
-        "judgment for defendant", "defendant prevailed", "dismissed with prejudice", 
-        "dismissed in its entirety", "judgment for defendant is entered", "plaintiff takes nothing"
+
+    defendant_signals = [
+        "judgment for defendant",
+        "defendant prevailed",
+        "plaintiff takes nothing",
+        "case dismissed",
+        "dismissed with prejudice",
+        "summary judgment for defendant",
+        "motion granted for defendant"
     ]
 
-    win_score = sum(1 for phrase in win_signals if phrase in text_lower)
-    loss_score = sum(1 for phrase in loss_signals if phrase in text_lower)
+    mixed_signals = [
+        "granted in part and denied in part",
+        "affirmed in part",
+        "reversed in part",
+        "mixed verdict"
+    ]
 
-    if win_score > loss_score:
-        result["outcome"] = 1
-    elif loss_score > win_score:
-        result["outcome"] = 0
+    settlement_signals = [
+        "settlement",
+        "settled",
+        "stipulated dismissal"
+    ]
 
-    # -----------------------------
-    # 2. EXTRACT PAYMENT
-    # -----------------------------
-    money_pattern = re.compile(r'\$\s?[\d,]+(?:\.\d+)?(?:\s*(million|billion|thousand))?', re.IGNORECASE)
-    sentences = text.split('. ')
-    
+    # Scores
+    plaintiff_score = sum(1 for s in plaintiff_signals if s in text_lower)
+    defendant_score = sum(1 for s in defendant_signals if s in text_lower)
+    mixed_score = sum(1 for s in mixed_signals if s in text_lower)
+
+    # Determine outcome
+    if any(s in text_lower for s in settlement_signals):
+        result["outcome"] = "settled"
+
+    elif mixed_score > 0:
+        result["outcome"] = "mixed"
+
+    elif plaintiff_score > defendant_score and plaintiff_score > 0:
+        result["outcome"] = "plaintiff_win"
+
+    elif defendant_score > plaintiff_score and defendant_score > 0:
+        result["outcome"] = "defendant_win"
+
+    elif "dismissed" in text_lower:
+        result["outcome"] = "dismissed"
+
+    # -----------------------------------
+    # PAYMENT EXTRACTION
+    # -----------------------------------
+
+    payment_signals = [
+        "damages",
+        "awarded",
+        "award",
+        "settlement",
+        "liable for",
+        "ordered to pay",
+        "attorney fees",
+        "reasonable royalty",
+        "enhanced damages"
+    ]
+
+    # Better money regex
+    money_pattern = re.compile(
+        r'(?:\$|USD\s?)\s?([\d,.]+(?:\.\d+)?)\s*(million|billion|thousand)?',
+        re.IGNORECASE
+    )
+
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+
     for sentence in sentences:
+
         s_lower = sentence.lower()
-        if any(k in s_lower for k in ["damage", "award", "cost", "fee", "settlement", "attorney"]):
-            matches = money_pattern.findall(sentence)
-            if matches:
+
+        # Require BOTH payment language + money
+        if any(signal in s_lower for signal in payment_signals):
+
+            match = money_pattern.search(sentence)
+
+            if match:
+
+                amount = match.group(0)
+
                 result["payment_found"] = 1
-                match_str = re.search(r'\$[\d,]+(?:\.\d+)?(?:\s*(?:million|billion|thousand))?', sentence).group(0)
-                result["payment_amount"] = match_str.replace(" ", "")
-                break # Just take the first one
+                result["payment_amount"] = amount.strip()
+
+                break
 
     return result
-
 
 # =========================
 # HELPERS
@@ -158,103 +228,144 @@ async def scrape_search_page(context, url):
             
         return results_on_page
 
+async def extract_court(page, url):
+    """
+    Robust court extraction across CourtListener layouts.
+    """
 
+    selectors = [
+        "h4.case-court",
+        "p.court",
+        ".court-name",
+        "ol.breadcrumb li",
+        "nav.breadcrumbs",
+        "dt:has-text('Court') + dd"
+    ]
+
+    for selector in selectors:
+
+        try:
+            locator = page.locator(selector).first
+
+            if await locator.count() > 0:
+
+                text = await locator.inner_text()
+
+                if text and len(text.strip()) > 3:
+                    return text.strip()
+
+        except:
+            continue
+
+    # -----------------------------------
+    # URL FALLBACKS
+    # -----------------------------------
+
+    url_lower = url.lower()
+
+    if "/ca" in url_lower:
+        return "US Court of Appeals"
+
+    if "/district-courts/" in url_lower:
+        return "US District Court"
+
+    if "/bankruptcy/" in url_lower:
+        return "US Bankruptcy Court"
+
+    return None
 # =========================
 # PHASE 2: ENRICH CASE DETAILS
 # =========================
 
 async def enrich_case_details(context, case_data):
+
     async with enrich_sem:
+
         if not case_data.get("url"):
             return case_data
 
         page = await context.new_page()
-        
+
         try:
             url = case_data["url"]
+
             print(f"🧐 [Enrich] Processing: {case_data['case_name'][:50]}...")
-            
+
             await page.goto(url, timeout=60000)
-            
-            # ROBUST WAIT: Wait for network to be mostly idle, rather than a specific selector
-            # This prevents timeouts on pages with different layouts (PDFs, old HTML)
+
+            # -----------------------------------
+            # ROBUST WAIT
+            # -----------------------------------
             try:
                 await page.wait_for_load_state("networkidle", timeout=20000)
             except:
-                # If networkidle fails, we just proceed anyway; maybe the site is slow
                 pass
 
-            # -----------------------------
-            # 1. EXTRACT COURT NAME
-            # -----------------------------
-            try:
-                # Try finding the court in the standard header area
-                court_elem = page.locator("h4.case-court").first
-                if await court_elem.count() > 0:
-                    case_data["court"] = await court_elem.inner_text()
-                else:
-                    # Fallback: Look in the body if header structure is different
-                    # Sometimes court is in a generic meta div
-                    meta_court = page.locator("dd:has-text('Court') + dd").first
-                    if await meta_court.count() > 0:
-                         case_data["court"] = await meta_court.inner_text()
-                    else:
-                         case_data["court"] = None
-            except:
-                case_data["court"] = None
+            # -----------------------------------
+            # 1. EXTRACT COURT
+            # -----------------------------------
+            case_data["court"] = await extract_court(page, url)
 
-            # -----------------------------
-            # 2. EXTRACT TEXT (FALLBACK SYSTEM)
-            # -----------------------------
+            # -----------------------------------
+            # 2. EXTRACT TEXT
+            # -----------------------------------
             full_text = ""
-            
-            # List of selectors to try, ordered by likelihood of containing the main opinion text
+
             selectors = [
-                "div#opinion-content",       # Most common modern layout
-                "div.col-sm-9.main.document",# The layout you specified
-                "article",                    # Semantic HTML tag
-                "div.opinion-text",           # Older layout variation
-                "div.main-content"            # Fallback generic
+                "div#opinion-content",
+                "div.col-sm-9.main.document",
+                "div.opinion-text",
+                "article",
+                "main",
+                "body"
             ]
 
-            content_found = False
             for selector in selectors:
+
                 try:
-                    # Check if element exists
                     locator = page.locator(selector).first
+
                     if await locator.count() > 0:
+
                         text = await locator.inner_text()
-                        # Sanity check: If text is very short, it might just be a header/spinner
-                        if len(text) > 200: 
+
+                        # Ignore tiny blocks
+                        if text and len(text) > 1000:
                             full_text = text
-                            content_found = True
                             break
+
                 except:
                     continue
 
-            if not content_found:
-                print(f"   ⚠️ Could not find main text content for {case_data['case_name'][:30]} (Likely PDF or Unsupported Layout)")
-                case_data["outcome"] = None
+            # -----------------------------------
+            # 3. ANALYZE CONTENT
+            # -----------------------------------
+            if not full_text:
+
+                case_data["outcome"] = "unknown"
                 case_data["payment_found"] = 0
                 case_data["payment_amount"] = None
+
             else:
-                # Run Heuristic Analysis
+
                 analysis = analyze_legal_content(full_text)
+
                 case_data["outcome"] = analysis["outcome"]
                 case_data["payment_found"] = analysis["payment_found"]
                 case_data["payment_amount"] = analysis["payment_amount"]
 
         except Exception as e:
-            print(f"⚠️ [Enrich] Critical error on {url}: {e}")
-            # Ensure columns exist
-            case_data["court"] = case_data.get("court")
-            case_data["outcome"] = None
+
+            print(f"⚠️ [Enrich] Error: {e}")
+
+            case_data["court"] = None
+            case_data["outcome"] = "unknown"
             case_data["payment_found"] = 0
             case_data["payment_amount"] = None
 
         finally:
             await page.close()
-            
+
         return case_data
 
 

@@ -63,7 +63,7 @@ def analyze_legal_content(text: str):
     # -----------------------------
     # 2. EXTRACT PAYMENT
     # -----------------------------
-    money_pattern = re.compile(r'\$\s?[\d,]+(?:\.\d+)?(?:\s*(million|billion|thousand))?', re.IGNORECASE)
+    money_pattern = re.compile(r'\$\s?[\d,]+(?:\.\d+)?(?:\s*(million|billion|thousand))?|($)', re.IGNORECASE)
     sentences = text.split('. ')
     
     for sentence in sentences:
