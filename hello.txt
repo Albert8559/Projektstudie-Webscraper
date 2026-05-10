@@ -1,0 +1,86 @@
+async def enrich_case_details(context, case_data):
+    async with enrich_sem:
+        if not case_data.get("url"):
+            return case_data
+
+        page = await context.new_page()
+        
+        try:
+            url = case_data["url"]
+            safe_name = case_data.get('case_name', 'Unknown')[:30]
+            print(f" [Enrich] Processing: {safe_name}...")
+            
+            await page.goto(url, timeout=60000)
+            
+            try:
+                # Wait for the article tag which is present in almost all CourtListener layouts
+                await page.wait_for_selector("article", timeout=15000)
+            except Exception:
+                pass
+
+            # -----------------------------
+            # 1. EXTRACT COURT NAME
+            # -----------------------------
+            try:
+                # This selector works for the HTML you provided (<h4 class="case-court">)
+                court_elem = page.locator("h4.case-court").first
+                if await court_elem.count() > 0:
+                    case_data["court"] = await court_elem.inner_text()
+                else:
+                    case_data["court"] = None
+            except Exception:
+                case_data["court"] = None
+
+            # -----------------------------
+            # 2. EXTRACT TEXT (ROBUST FALLBACK SYSTEM)
+            # -----------------------------
+            full_text = ""
+            
+            # List of selectors ordered by specificity and reliability
+            selectors = [
+                "div#harvard-text",           # 1. High-quality Harvard import (Your snippet)
+                "div#opinion-content",        # 2. Standard modern layout
+                "div.serif-text.harvard",     # 3. Class-based fallback for Harvard style
+                "div.main-document",          # 4. Corrected typo from your original code (was main.document)
+                "article",                    # 5. Generic semantic tag (often works if others fail)
+                "div.opinion-text",           # 6. Older layout
+                "div.main-content"            # 7. Last resort generic container
+            ]
+
+            content_found = False
+            for selector in selectors:
+                try:
+                    locator = page.locator(selector).first
+                    if await locator.count() > 0:
+                        text = await locator.inner_text()
+                        # Sanity check: Ensure we grabbed actual content, not just a header
+                        if len(text) > 200: 
+                            full_text = text
+                            content_found = True
+                            break
+                except Exception:
+                    continue
+
+            if not content_found:
+                print(f"   Could not find main text for {safe_name}")
+                case_data["outcome"] = None
+                case_data["payment_found"] = 0
+                case_data["payment_amount"] = None
+            else:
+                # Run Heuristic Analysis
+                analysis = analyze_legal_content(full_text)
+                case_data["outcome"] = analysis["outcome"]
+                case_data["payment_found"] = analysis["payment_found"]
+                case_data["payment_amount"] = analysis["payment_amount"]
+
+        except Exception as e:
+            print(f" [Enrich] Critical error on {url}: {e}")
+            case_data["court"] = case_data.get("court")
+            case_data["outcome"] = None
+            case_data["payment_found"] = 0
+            case_data["payment_amount"] = None
+
+        finally:
+            await page.close()
+            
+        return case_data
