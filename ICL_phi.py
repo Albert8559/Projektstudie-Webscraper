@@ -4,6 +4,17 @@ import random
 import re
 import json
 import torch
+import sys
+import io
+
+# ... (your other imports like pandas, asyncio, etc.)
+
+# FORCE UTF-8 ENCODING FOR WINDOWS CONSOLE
+# This prevents the crash when printing emojis like 
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+# ... (Rest of your code: CONFIG, MODEL SETTINGS, etc.)
 from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
 
 from playwright.async_api import async_playwright
@@ -42,20 +53,35 @@ text_generator = None
 def get_model_pipeline():
     global text_generator
     if text_generator is None:
-        print("📥 Loading Microsoft Phi-3 (First run only). Downloading ~2GB...")
+        print("📥 Loading Microsoft Phi-3 (First run only)...")
         try:
-            # Phi-3 requires trust_remote_code=True
+            # 1. Load Tokenizer
+            tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
+            
+            # 2. Load Model explicitly
+            # We remove 'device_map' from here and manually move model to device to avoid the 'type' error
+            model = AutoModelForCausalLM.from_pretrained(
+                MODEL_ID,
+                trust_remote_code=True,
+                torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+                device_map="auto" if DEVICE == "cuda" else None
+            )
+            
+            # If on CPU, we need to manually move it if device_map wasn't used
+            if DEVICE == "cpu":
+                model = model.to(DEVICE)
+
+            # 3. Create Pipeline with loaded objects
             text_generator = pipeline(
                 "text-generation",
-                model=MODEL_ID,
-                trust_remote_code=True, 
-                device_map="auto", # Auto-detects GPU or CPU
-                torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32
+                model=model,
+                tokenizer=tokenizer
             )
             print("✅ Model loaded successfully.")
         except Exception as e:
             print(f"❌ Failed to load model: {e}")
-            print("   Ensure you have 'torch' installed (pip install torch)")
+            import traceback
+            traceback.print_exc() # Print full error for debugging
     return text_generator
 
 
@@ -235,18 +261,39 @@ async def enrich_case_details(context, case_data):
             # -----------------------------
             # 2. TEXT EXTRACTION
             # -----------------------------
-            selectors = ["article", "div.row.content", "div.col-sm-9.main.document", "div#opinion-content"]
+            selectors = [
+                "div.opinion-content", 
+                "div.serialized-text",
+                "article",
+                "div.row.content", 
+                "div.col-sm-9.main.document"
+            ]
+            
             full_text = ""
+            
+            # Try specific selectors first
             for selector in selectors:
                 try:
                     locator = page.locator(selector).first
                     if await locator.count() > 0:
                         text = await locator.inner_text()
-                        if len(text) > 100:
+                        if len(text) > 100: # Ensure we got meaningful text
                             full_text = text
                             break
                 except:
                     continue
+
+            # FALLBACK: If specific selectors failed, try generic body text grab
+            if not full_text:
+                try:
+                    # Get all text, but exclude headers/scripts (simple heuristic)
+                    body_text = await page.locator("body").inner_text()
+                    if len(body_text) > 200:
+                        full_text = body_text
+                except:
+                    pass
+
+           
 
             if not full_text:
                 print(f"   ⚠️ No text content found.")

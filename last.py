@@ -6,11 +6,15 @@ from datetime import datetime
 
 from playwright.async_api import async_playwright
 
+import sys
+import io
 
+# Set stdout to utf-8 to allow emojis on Windows
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 # =========================
 # CONFIG
 # =========================
-OUTPUT_FILE = "courtlistener_enriched_2.csv"
+OUTPUT_FILE = "courtlistener_normal_2.csv"
 
 # Concurrency settings
 MAX_CONCURRENT_SCRAPES = 3
@@ -18,7 +22,7 @@ MAX_CONCURRENT_ENRICH = 3
 RETRIES = 3
 
 # Search Parameters
-SEARCH_QUERY = "%22Patent+Marking%22"
+SEARCH_QUERY = "%22Patents%22"
 BASE_URL = "https://www.courtlistener.com"
 NUM_PAGES = 11
 
@@ -97,7 +101,7 @@ async def with_retries(coro, *args, **kwargs):
             return await coro(*args, **kwargs)
         except Exception as e:
             if attempt == RETRIES:
-                print(f"❌ Failed after {RETRIES} retries: {e}")
+                print(f" Failed after {RETRIES} retries: {e}")
                 return None
             wait_time = (2 ** attempt) + random.uniform(0, 1)
             print(f"⚠️ Attempt {attempt + 1} failed. Retrying in {wait_time:.2f}s...")
@@ -118,7 +122,7 @@ async def scrape_search_page(context, url):
         results_on_page = []
 
         try:
-            print(f"🔎 [Search] Scraping: {url}")
+            print(f" [Search] Scraping: {url}")
             await page.goto(url, timeout=60000)
             await page.wait_for_selector("article", timeout=30000)
             
@@ -151,7 +155,7 @@ async def scrape_search_page(context, url):
                     continue
 
         except Exception as e:
-            print(f"⚠️ [Search] Error on {url}: {e}")
+            print(f" [Search] Error on {url}: {e}")
         
         finally:
             await page.close()
@@ -172,7 +176,7 @@ async def enrich_case_details(context, case_data):
         
         try:
             url = case_data["url"]
-            print(f"🧐 [Enrich] Processing: {case_data['case_name'][:50]}...")
+            print(f" [Enrich] Processing: {case_data['case_name'][:50]}...")
             
             await page.goto(url, timeout=60000)
             
@@ -233,7 +237,7 @@ async def enrich_case_details(context, case_data):
                     continue
 
             if not content_found:
-                print(f"   ⚠️ Could not find main text content for {case_data['case_name'][:30]} (Likely PDF or Unsupported Layout)")
+                print(f"   Could not find main text content for {case_data['case_name'][:30]} (Likely PDF or Unsupported Layout)")
                 case_data["outcome"] = None
                 case_data["payment_found"] = 0
                 case_data["payment_amount"] = None
@@ -245,7 +249,7 @@ async def enrich_case_details(context, case_data):
                 case_data["payment_amount"] = analysis["payment_amount"]
 
         except Exception as e:
-            print(f"⚠️ [Enrich] Critical error on {url}: {e}")
+            print(f" [Enrich] Critical error on {url}: {e}")
             # Ensure columns exist
             case_data["court"] = case_data.get("court")
             case_data["outcome"] = None
@@ -265,7 +269,7 @@ async def enrich_case_details(context, case_data):
 async def main():
     # 1. Generate Search URLs
     urls = generate_courtlistener_urls(SEARCH_QUERY, NUM_PAGES)
-    print(f"🚀 Phase 1: Scanning {len(urls)} search pages...\n")
+    print(f" Phase 1: Scanning {len(urls)} search pages...\n")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -285,7 +289,7 @@ async def main():
             if res:
                 cases_to_enrich.extend(res)
 
-        print(f"\n📋 Found {len(cases_to_enrich)} cases. Starting Phase 2 (Enrichment)...\n")
+        print(f"\n Found {len(cases_to_enrich)} cases. Starting Phase 2 (Enrichment)...\n")
 
         # ==========================
         # STEP 2: ENRICH CASES
@@ -313,12 +317,12 @@ async def main():
         df_out = df_out[required_cols]
         
         df_out.to_csv(OUTPUT_FILE, index=False, encoding='utf-8')
-        print(f"\n✅ Saved enriched data to {OUTPUT_FILE}")
+        print(f"\n Saved enriched data to {OUTPUT_FILE}")
         
         print(f"Stats: Payments found in {df_out['payment_found'].sum()} cases.")
         print(f"Stats: Outcome determined for {df_out['outcome'].notna().sum()} cases.")
     else:
-        print("⚠️ No data found.")
+        print(" No data found.")
 
 
 if __name__ == "__main__":
