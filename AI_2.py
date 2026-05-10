@@ -9,7 +9,7 @@ from playwright.async_api import async_playwright
 # =========================
 # CONFIG
 # =========================
-OUTPUT_FILE = "results_enriched.csv"
+OUTPUT_FILE = "results_enriched_2.csv"
 
 MAX_CONCURRENT_ENRICH = 5
 RETRIES = 2

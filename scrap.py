@@ -5,25 +5,25 @@ import re
 import time
 import random
 
-# --- Konfiguration ---
+
 INPUT_FILE = 'urls.csv'
 OUTPUT_FILE = 'results.csv'
 
-# User-Agent simulieren
+
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
-# Reguläre Ausdrücke (Regex) für Patente
+
 PATENT_REGEX = re.compile(
     r'\b(?:US|EP|DE|WO|CN|JP|GB|CA)\s?(?:Patent\s?)?[\d,\-\s]{4,}(?:\s?[A-Z]\d)?\b', 
     re.IGNORECASE
 )
-# Erkennt "Publication number: 12345678"
+
 PUBLICATION_LABEL_REGEX = re.compile(r'(?:Publication|Patent)\s?number:\s?([\d\-\s,]+)', re.IGNORECASE)
 
 def get_absolute_url(base, link):
-    """Converts relative URLs (e.g. /patents) to absolute URLs."""
+    
     if link.startswith('http'):
         return link
     elif link.startswith('/'):
@@ -32,7 +32,7 @@ def get_absolute_url(base, link):
         return base.rstrip('/') + '/' + link
 
 def analyze_site(base_url):
-    """Analysiert Hauptseite UND folgt Patent-Links."""
+    
     print(f"Analysiere: {base_url}")
     
     all_patents = set()
@@ -45,14 +45,14 @@ def analyze_site(base_url):
             break
             
         try:
-            # Sicherstellen, dass URL http/https hat
+            
             current_url = url
             if not current_url.startswith(('http://', 'https://')):
                 current_url = 'https://' + current_url
             
             response = requests.get(current_url, headers=HEADERS, timeout=10)
             
-            # CHECK: Ist es ein PDF?
+            
             content_type = response.headers.get('content-type', '').lower()
             if 'application/pdf' in content_type:
                 print(f"  -> PDF gefunden: {current_url}")

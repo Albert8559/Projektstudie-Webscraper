@@ -157,7 +157,7 @@ async def enrich_patent_playwright(context, patent_number):
 
     try:
         url = f"https://patents.google.com/patent/{patent_number}"
-        await page.goto(url, timeout=30000)
+        await page.goto(url, timeout=3000)
         await page.wait_for_load_state("networkidle")
 
         # -------------------------
