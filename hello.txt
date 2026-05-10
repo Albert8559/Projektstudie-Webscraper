@@ -1,0 +1,93 @@
+async def enrich_case_details(context, case_data):
+    async with enrich_sem:
+        if not case_data.get("url"):
+            return case_data
+
+        page = await context.new_page()
+        
+        try:
+            url = case_data["url"]
+            # Safe print to avoid encoding errors
+            safe_name = case_data.get('case_name', 'Unknown')[:30]
+            print(f" [Enrich] Processing: {safe_name}...")
+            
+            await page.goto(url, timeout=60000)
+            
+            # IMPROVED WAIT STRATEGY:
+            # 1. Wait for the DOM to be ready.
+            # 2. Explicitly wait for the opinion container found in your HTML.
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                # This ID "harvard-text" is present in your provided HTML
+                await page.wait_for_selector("#harvard-text, article", timeout=10000)
+            except Exception:
+                # If these aren't found, the page layout is drastically different (or a PDF)
+                pass
+
+            # -----------------------------
+            # 1. EXTRACT COURT NAME
+            # -----------------------------
+            try:
+                # SELECTOR MATCH: <h4 class="case-court">
+                court_elem = page.locator("h4.case-court").first
+                if await court_elem.count() > 0:
+                    case_data["court"] = await court_elem.inner_text()
+                else:
+                    # Fallback just in case
+                    case_data["court"] = None
+            except Exception:
+                case_data["court"] = None
+
+            # -----------------------------
+            # 2. EXTRACT TEXT (CORRECTED SELECTORS)
+            # -----------------------------
+            full_text = ""
+            
+            # ORDERED SELECTORS based on your provided HTML
+            # "div#harvard-text" is the most specific container in your snippet
+            # "div.serif-text.harvard" is the class applied to the text block
+            selectors = [
+                "div#harvard-text",         # Best Match from your HTML
+                "div.serif-text.harvard",   # Class Match from your HTML
+                "div.main-document",        # Parent container (corrected class name)
+                "article",                  # Fallback
+                "div#opinion-content"       # Legacy fallback
+            ]
+
+            content_found = False
+            for selector in selectors:
+                try:
+                    locator = page.locator(selector).first
+                    if await locator.count() > 0:
+                        text = await locator.inner_text()
+                        # Sanity check
+                        if len(text) > 200: 
+                            full_text = text
+                            content_found = True
+                            break
+                except Exception:
+                    continue
+
+            if not content_found:
+                print(f"   Could not find main text for {safe_name}")
+                case_data["outcome"] = None
+                case_data["payment_found"] = 0
+                case_data["payment_amount"] = None
+            else:
+                # Run Heuristic Analysis
+                analysis = analyze_legal_content(full_text)
+                case_data["outcome"] = analysis["outcome"]
+                case_data["payment_found"] = analysis["payment_found"]
+                case_data["payment_amount"] = analysis["payment_amount"]
+
+        except Exception as e:
+            print(f" [Enrich] Critical error on {url}: {e}")
+            case_data["court"] = case_data.get("court")
+            case_data["outcome"] = None
+            case_data["payment_found"] = 0
+            case_data["payment_amount"] = None
+
+        finally:
+            await page.close()
+            
+        return case_data
