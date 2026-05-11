@@ -11,14 +11,14 @@ from playwright.async_api import async_playwright
 # =========================
 # CONFIG
 # =========================
-OUTPUT_FILE = "results_final.csv"
+OUTPUT_FILE = "results_final_comp.csv"
 
 # Concurrency settings
 MAX_CONCURRENT_SCRAPE = 1  
 MAX_CONCURRENT_ENRICH = 1  
 RETRIES = 3
 
-SEARCH_QUERY = "%22Patent+Marking%22"
+SEARCH_QUERY = "%22Patents%22"
 BASE_URL = "https://www.courtlistener.com"
 NUM_PAGES = 11
 
@@ -103,7 +103,7 @@ async def with_retries(coro, *args, **kwargs):
             return await coro(*args, **kwargs)
         except Exception as e:
             if attempt == RETRIES:
-                print(f"❌ Failed after {RETRIES} retries: {e}")
+                print(f" Failed after {RETRIES} retries: {e}")
                 return None
             wait_time = (2 ** attempt) + random.uniform(0, 1)
             await asyncio.sleep(wait_time)
@@ -123,12 +123,12 @@ async def scrape_search_page(context, url):
         results_on_page = []
 
         try:
-            print(f"🔎 Scanning: {url}")
+            print(f" Scanning: {url}")
             await page.goto(url, timeout=60000)
             
             # --- MANDATORY 15 SECOND PAUSE ---
-            print("   ⏸️  Waiting 15 seconds to solve Captcha (if present)...")
-            await asyncio.sleep(15)
+            print("    Waiting 15 seconds to solve Captcha (if present)...")
+            await asyncio.sleep(9)
             # -------------------------------
 
             await page.wait_for_selector("article", timeout=30000)
@@ -156,7 +156,7 @@ async def scrape_search_page(context, url):
                 except Exception:
                     continue
         except Exception as e:
-            print(f"⚠️ Search error {url}: {e}")
+            print(f" Search error {url}: {e}")
         finally:
             await page.close()
         return results_on_page
@@ -178,8 +178,8 @@ async def enrich_case_details(context, case_data):
             await page.goto(url, timeout=60000)
             
             # --- MANDATORY 15 SECOND PAUSE (REQUESTED) ---
-            print("   ⏸️  Waiting 15 seconds to solve Captcha (if present)...")
-            await asyncio.sleep(15)
+            print("     Waiting 15 seconds to solve Captcha (if present)...")
+            await asyncio.sleep(9)
             # ----------------------------------------------
 
             await page.wait_for_load_state("networkidle", timeout=45000)
@@ -214,20 +214,20 @@ async def enrich_case_details(context, case_data):
                         if len(text) > 500:
                             full_text = text
                             content_found = True
-                            print(f"   ✅ Found text via: {selector}")
+                            print(f"    Found text via: {selector}")
                             break
                 except Exception:
                     continue
 
             # 3. NUCLEAR FALLBACK
             if not content_found:
-                print(f"   ⚠️ Specific selectors failed. Trying body text fallback...")
+                print(f"    Specific selectors failed. Trying body text fallback...")
                 try:
                     body_text = await page.locator("body").inner_text()
                     if len(body_text) > 1000:
                         full_text = body_text
                         content_found = True
-                        print(f"   ✅ Found text via Body fallback.")
+                        print(f"    Found text via Body fallback.")
                     else:
                         pass 
                 except Exception:
@@ -235,7 +235,7 @@ async def enrich_case_details(context, case_data):
 
             # 4. FAILURE DIAGNOSTICS
             if not content_found:
-                print(f"   ❌ FAILED to extract text for {safe_name}. Saving screenshot...")
+                print(f"    FAILED to extract text for {safe_name}. Saving screenshot...")
                 try:
                     timestamp = datetime.now().strftime('%H%M%S')
                     screenshot_path = f"{DEBUG_FOLDER}/{safe_name}_{timestamp}.png"
@@ -272,10 +272,10 @@ async def enrich_case_details(context, case_data):
 
 async def main():
     urls = generate_urls(SEARCH_QUERY, NUM_PAGES)
-    print(f"🚀 Processing {len(urls)} pages...")
-    print("⚠️  BROWSER WILL OPEN VISIBLY.")
-    print("⚠️  THE SCRIPT PAUSES FOR 15 SECONDS ON EVERY PAGE.")
-    print("⚠️  USE THIS TIME TO SOLVE CAPTCHAS IF THEY APPEAR.\n")
+    print(f" Processing {len(urls)} pages...")
+    print("  BROWSER WILL OPEN VISIBLY.")
+    print(" THE SCRIPT PAUSES FOR 15 SECONDS ON EVERY PAGE.")
+    print(" USE THIS TIME TO SOLVE CAPTCHAS IF THEY APPEAR.\n")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -297,7 +297,7 @@ async def main():
         for res in search_results:
             if res: cases_to_enrich.extend(res)
 
-        print(f"\n📋 Found {len(cases_to_enrich)} cases. Enriching...\n")
+        print(f"\n Found {len(cases_to_enrich)} cases. Enriching...\n")
 
         enrich_tasks = [with_retries(enrich_case_details, context, case) for case in cases_to_enrich]
         final_data = await asyncio.gather(*enrich_tasks)
@@ -312,7 +312,7 @@ async def main():
             
         df_out = df_out[cols]
         df_out.to_csv(OUTPUT_FILE, index=False, encoding='utf-8')
-        print(f"\n✅ Saved to {OUTPUT_FILE}")
+        print(f"\n Saved to {OUTPUT_FILE}")
         print(f"Stats: Payments in {df_out['payment_found'].sum()} cases.")
 
 if __name__ == "__main__":
