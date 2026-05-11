@@ -302,8 +302,8 @@ async def main():
         df_out = pd.DataFrame(final_data)
         
         required_cols = [
-            "case_name", "docket_number", "date_filed", "url", 
-            "court", "payment_found", "payment_amount", "outcome"
+            "case_name", "docket_number", "date_filed",
+            "court", "payment_found", "payment_amount", "outcome","url"
         ]
         
         for col in required_cols:

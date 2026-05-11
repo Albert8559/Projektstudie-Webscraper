@@ -5,12 +5,16 @@ import re
 from datetime import datetime
 
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
+import os # Add this to imports
 
-
+# Ensure a folder exists for debugging
+if not os.path.exists("debug_failures"):
+    os.makedirs("debug_failures")
 # =========================
 # CONFIG
 # =========================
-OUTPUT_FILE = "results_heuristic.csv"
+OUTPUT_FILE = "results_final.csv"
 
 MAX_CONCURRENT_ENRICH = 3
 RETRIES = 3
@@ -161,89 +165,129 @@ async def scrape_search_page(context, url):
         return results_on_page
 
 
+import os # Add this to imports
+
+# Ensure a folder exists for debugging
+if not os.path.exists("debug_failures"):
+    os.makedirs("debug_failures")
+
 async def enrich_case_details(context, case_data):
     async with enrich_sem:
         if not case_data.get("url"):
             return case_data
 
         page = await context.new_page()
+        safe_name = case_data.get('case_name', 'Unknown')[:30].replace("/", "-")
+        
         try:
             url = case_data["url"]
-            print(f"🧐 Enriching: {case_data['case_name'][:50]}...")
+            print(f" [Enrich] Processing: {safe_name}...")
             
             await page.goto(url, timeout=60000)
-            try:
-                await page.wait_for_load_state("networkidle", timeout=20000)
-            except:
-                pass
-
-            # -----------------------------
-            # 1. ROBUST COURT EXTRACTION
-            # -----------------------------
-            court_name = None
             
-            # Method A: Direct Tag
+            # CRITICAL: Wait for 'networkidle' to ensure JS rendering is mostly done
+            # Some CL pages render text heavily with React/Vue
+            await page.wait_for_load_state("networkidle", timeout=45000)
+            
+            # -----------------------------------------
+            # 1. Extract Court Name
+            # -----------------------------------------
             try:
-                court_elem = page.locator("h4.case-court").first
+                court_elem = page.locator("h4.case-court, h4.docket-court").first
                 if await court_elem.count() > 0:
-                    court_name = await court_elem.inner_text()
+                    case_data["court"] = await court_elem.inner_text()
             except:
-                pass
+                case_data["court"] = None
 
-            # Method B: Regex Fallback (If Tag missing)
-            # Look for patterns like "District Court, D. Massachusetts" or "United States Court of Appeals"
-            if not court_name:
-                try:
-                    body_text = await page.locator("body").inner_text()
-                    # Regex: Starts with word, includes "Court", ends with location/state
-                    # This is a generic heuristic to catch court names hiding in text
-                    potential_courts = re.findall(r'(?:The\s+)?(?:United States\s+)?.*?\s+Court\s+(?:of\s+)?[\w\s,]+(?:District|Circuit|Appeals|Supreme|Appellate)\s+[\w\s,]+', body_text)
-                    if potential_courts:
-                        court_name = potential_courts[0].strip()
-                except:
-                    pass
+            # -----------------------------------------
+            # 2. Extract Text (The "Nuclear" Strategy)
+            # -----------------------------------------
+            full_text = ""
             
-            case_data["court"] = court_name
-
-            # -----------------------------
-            # 2. ROBUST TEXT EXTRACTION
-            # -----------------------------
-            # Priority: <article> -> <div class="row content"> -> <div class="col-sm-9">
+            # LIST OF SPECIFIC SELECTORS (From specific to general)
             selectors = [
-                "article",
-                "div.row.content", 
-                "div.col-sm-9.main.document",
-                "div#opinion-content"
+                "div#opinion-content",
+                "div#harvard-text",
+                "div.section-opinion-content", 
+                "div.main-document",
+                "div.opinion-text",
+                "article"
             ]
 
-            full_text = ""
+            content_found = False
+            
+            # Try specific selectors first
             for selector in selectors:
                 try:
+                    # Check if element exists and is visible
                     locator = page.locator(selector).first
                     if await locator.count() > 0:
+                        # Wait a bit for it to fill with text
+                        await page.wait_for_selector(selector, state="attached", timeout=2000)
+                        
                         text = await locator.inner_text()
-                        if len(text) > 50:
+                        
+                        # Heuristic: If text is substantial (> 500 chars), use it.
+                        # This prevents grabbing empty divs or just "Opinion" headers.
+                        if len(text) > 500:
                             full_text = text
+                            content_found = True
+                            print(f"   ✅ Found text via selector: {selector}")
                             break
-                except:
+                except Exception:
                     continue
 
-            if not full_text:
-                print(f"   ⚠️ No text content found.")
+            # -----------------------------------------
+            # 3. THE NUCLEAR FALLBACK (If specific selectors failed)
+            # -----------------------------------------
+            if not content_found:
+                print(f"   ⚠️ Specific selectors failed. Falling back to <body>...")
+                try:
+                    # Grab the whole body text. It includes nav/footer, but it's better than nothing.
+                    body_text = await page.locator("body").inner_text()
+                    
+                    # Filter: If the body text is very short, we are likely on a Docket page or Error page.
+                    if len(body_text) > 1000:
+                        full_text = body_text
+                        content_found = True
+                        print(f"   ✅ Found text via Body (Nuclear Option).")
+                    else:
+                        # Text is too short. Something is wrong (PDF, Login, Empty).
+                        pass 
+                except Exception:
+                    pass
+
+            # -----------------------------------------
+            # 4. FAILURE DIAGNOSTICS (If we still have no text)
+            # -----------------------------------------
+            if not content_found:
+                print(f"   ❌ FAILED to extract text for {safe_name}. Saving screenshot...")
+                try:
+                    # Save screenshot so you can see WHY it failed
+                    screenshot_path = f"debug_failures/{safe_name}_{datetime.now().strftime('%H%M%S')}.png"
+                    await page.screenshot(path=screenshot_path, full_page=True)
+                    print(f"   💾 Saved debug screenshot to {screenshot_path}")
+                except:
+                    pass
+                
+                # Set defaults
                 case_data["outcome"] = None
                 case_data["payment_found"] = 0
                 case_data["payment_amount"] = None
-            else:
-                # Run Improved Heuristics
-                analysis = analyze_legal_content(text)
-                case_data["outcome"] = analysis["outcome"]
-                case_data["payment_found"] = analysis["payment_found"]
-                case_data["payment_amount"] = analysis["payment_amount"]
+                return case_data
+
+            # -----------------------------------------
+            # 5. Run Analysis
+            # -----------------------------------------
+            analysis = analyze_legal_content(full_text)
+            case_data["outcome"] = analysis["outcome"]
+            case_data["payment_found"] = analysis["payment_found"]
+            case_data["payment_amount"] = analysis["payment_amount"]
 
         except Exception as e:
-            print(f"⚠️ Critical error on {url}: {e}")
-            # Ensure defaults
-            if "court" not in case_data: case_data["court"] = None
+            print(f" [Enrich] CRITICAL ERROR on {url}: {e}")
+            # Ensure keys exist
+            case_data["court"] = case_data.get("court")
             case_data["outcome"] = None
             case_data["payment_found"] = 0
             case_data["payment_amount"] = None
@@ -252,6 +296,15 @@ async def enrich_case_details(context, case_data):
             
         return case_data
 
+# Helper to avoid repeating court logic
+async def get_court_name(page):
+    try:
+        court_elem = page.locator("h4.case-court").first
+        if await court_elem.count() > 0:
+            return await court_elem.inner_text()
+    except:
+        pass
+    return None
 
 # =========================
 # MAIN
