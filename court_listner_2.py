@@ -224,7 +224,7 @@ async def enrich_case_details(context, case_data):
             
             await page.goto(url, timeout=60000)
             # Wait for main content to load
-            await page.wait_for_selector("div.col-sm-9.main.document", timeout=30000)
+            await page.wait_for_selector("div.row.content", timeout=30000)
 
             # -----------------------------
             # 1. EXTRACT COURT NAME
@@ -248,7 +248,7 @@ async def enrich_case_details(context, case_data):
                 article_text = ""
                 # Sometimes the content is in an <article>, sometimes just a div.
                 # We try to get the largest text block in the main document area.
-                content_locator = page.locator("div.col-sm-9.main.document")
+                content_locator = page.locator("div.row.content")
                 
                 # Get text, strip excessive whitespace
                 full_text = await content_locator.inner_text()
@@ -330,8 +330,8 @@ async def main():
         
         # Ensure all columns exist (handle missing keys gracefully)
         required_cols = [
-            "case_name", "docket_number", "date_filed", "url", 
-            "court", "payment_found", "payment_amount", "outcome"
+            "case_name", "docket_number", "date_filed",
+            "court", "payment_found", "payment_amount", "outcome", "url"
         ]
         
         for col in required_cols:

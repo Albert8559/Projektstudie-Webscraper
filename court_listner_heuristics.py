@@ -10,7 +10,7 @@ from playwright.async_api import async_playwright
 # =========================
 # CONFIG
 # =========================
-OUTPUT_FILE = "results_heuristic.csv"
+OUTPUT_FILE = "results_heuristic_2.csv"
 
 MAX_CONCURRENT_ENRICH = 3
 RETRIES = 3
@@ -222,7 +222,7 @@ async def enrich_case_details(context, case_data):
                     locator = page.locator(selector).first
                     if await locator.count() > 0:
                         text = await locator.inner_text()
-                        if len(text) > 100:
+                        if len(text) > 5:
                             full_text = text
                             break
                 except:
@@ -235,7 +235,7 @@ async def enrich_case_details(context, case_data):
                 case_data["payment_amount"] = None
             else:
                 # Run Improved Heuristics
-                analysis = analyze_legal_content(full_text)
+                analysis = analyze_legal_content(text)
                 case_data["outcome"] = analysis["outcome"]
                 case_data["payment_found"] = analysis["payment_found"]
                 case_data["payment_amount"] = analysis["payment_amount"]
