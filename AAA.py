@@ -11,7 +11,7 @@ from playwright.async_api import async_playwright
 # =========================
 # CONFIG
 # =========================
-OUTPUT_FILE = "results_final_comp.csv"
+OUTPUT_FILE = "results_final_comp_3.csv"
 
 # Concurrency settings
 MAX_CONCURRENT_SCRAPE = 1  
@@ -20,7 +20,7 @@ RETRIES = 3
 
 SEARCH_QUERY = "%22Patents%22"
 BASE_URL = "https://www.courtlistener.com"
-NUM_PAGES = 11
+NUM_PAGES = 25
 
 # Debug folder
 DEBUG_FOLDER = "debug_failures"

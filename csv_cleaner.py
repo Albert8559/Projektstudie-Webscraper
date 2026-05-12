@@ -37,8 +37,8 @@ def money_to_float(money_str):
         return 0.0
 
 def main():
-    input_filename = "results_final_comp.csv"
-    output_filename = "results_final_comp_cleaned.csv"
+    input_filename = "results_final_comp_3.csv"
+    output_filename = "results_final_comp_3_cleaned.csv"
     
     print(f"Loading data from {input_filename}...")
     try:
